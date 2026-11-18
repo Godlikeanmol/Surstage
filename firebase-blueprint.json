@@ -1,0 +1,250 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public karaoke singer profile without PII",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "avatarColor": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 24
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "avatarColor", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated user PII such as verified email",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 200
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "updatedAt"]
+    },
+    "Song": {
+      "title": "Song",
+      "description": "Curated YouTube karaoke track in the library",
+      "type": "object",
+      "properties": {
+        "videoId": {
+          "type": "string",
+          "minLength": 11,
+          "maxLength": 11,
+          "pattern": "^[a-zA-Z0-9_\\-]{11}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "artist": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "language": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Bollywood",
+            "Hindi retro",
+            "Punjabi",
+            "English pop",
+            "90s",
+            "regional",
+            "devotional"
+          ]
+        },
+        "durationSec": {
+          "type": "integer"
+        },
+        "isPublic": {
+          "type": "boolean"
+        },
+        "addedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "videoId",
+        "title",
+        "artist",
+        "language",
+        "category",
+        "durationSec",
+        "isPublic",
+        "addedByUid",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "Persisted karaoke jam room configuration",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 6,
+          "pattern": "^[A-Z0-9]{6}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "hostUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "isOpen": {
+          "type": "boolean"
+        },
+        "duetMode": {
+          "type": "boolean"
+        },
+        "autoMuteOnStage": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "code",
+        "name",
+        "hostUid",
+        "isOpen",
+        "duetMode",
+        "autoMuteOnStage",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "RoomQueueItem": {
+      "title": "RoomQueueItem",
+      "description": "Saved queue entry belonging to a karaoke room",
+      "type": "object",
+      "properties": {
+        "songId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "videoId": {
+          "type": "string",
+          "minLength": 11,
+          "maxLength": 11,
+          "pattern": "^[a-zA-Z0-9_\\-]{11}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "requestedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "requestedByName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "songId",
+        "videoId",
+        "title",
+        "requestedByUid",
+        "requestedByName",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Public profile document keyed by Firebase Auth UID"
+    },
+    "/users/{userId}/private/info": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Owner-only PII document containing user email"
+    },
+    "/songs/{songId}": {
+      "schema": { "$ref": "#/entities/Song" },
+      "description": "Curated karaoke song catalog searchable by title, artist, and category"
+    },
+    "/rooms/{roomCode}": {
+      "schema": { "$ref": "#/entities/Room" },
+      "description": "Karaoke jam room metadata keyed by 6-character code"
+    },
+    "/rooms/{roomCode}/savedQueue/{itemId}": {
+      "schema": { "$ref": "#/entities/RoomQueueItem" },
+      "description": "Queue items persisted under a karaoke room"
+    }
+  }
+}

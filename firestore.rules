@@ -1,0 +1,242 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Global hardened primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'anmol002425@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Pillar 2: Entity Validation Blueprints
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'avatarColor', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'avatarColor', 'createdAt', 'updatedAt'])
+        && data.uid is string && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60
+        && data.avatarColor is string && data.avatarColor.size() >= 4 && data.avatarColor.size() <= 24
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateInfo(data) {
+      return data.keys().hasAll(['uid', 'email', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'updatedAt'])
+        && data.uid is string && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSongCategory(cat) {
+      return cat in ['Bollywood', 'Hindi retro', 'Punjabi', 'English pop', '90s', 'regional', 'devotional'];
+    }
+
+    function isValidSong(data) {
+      return data.keys().hasAll(['videoId', 'title', 'artist', 'language', 'category', 'durationSec', 'isPublic', 'addedByUid', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['videoId', 'title', 'artist', 'language', 'category', 'durationSec', 'isPublic', 'addedByUid', 'createdAt', 'updatedAt'])
+        && data.videoId is string && data.videoId.size() == 11 && data.videoId.matches('^[a-zA-Z0-9_\\-]{11}$')
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.artist is string && data.artist.size() >= 1 && data.artist.size() <= 120
+        && data.language is string && data.language.size() >= 2 && data.language.size() <= 40
+        && data.category is string && isValidSongCategory(data.category)
+        && data.durationSec is int && data.durationSec >= 10 && data.durationSec <= 7200
+        && data.isPublic is bool
+        && data.addedByUid is string && isValidId(data.addedByUid)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidRoom(data) {
+      return data.keys().hasAll(['code', 'name', 'hostUid', 'isOpen', 'duetMode', 'autoMuteOnStage', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['code', 'name', 'hostUid', 'isOpen', 'duetMode', 'autoMuteOnStage', 'createdAt', 'updatedAt'])
+        && data.code is string && data.code.size() == 6 && data.code.matches('^[A-Z0-9]{6}$')
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.hostUid is string && isValidId(data.hostUid)
+        && data.isOpen is bool
+        && data.duetMode is bool
+        && data.autoMuteOnStage is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidQueueItem(data) {
+      return data.keys().hasAll(['songId', 'videoId', 'title', 'requestedByUid', 'requestedByName', 'createdAt'])
+        && data.keys().hasOnly(['songId', 'videoId', 'title', 'requestedByUid', 'requestedByName', 'createdAt'])
+        && data.songId is string && isValidId(data.songId)
+        && data.videoId is string && data.videoId.size() == 11 && data.videoId.matches('^[a-zA-Z0-9_\\-]{11}$')
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.requestedByUid is string && isValidId(data.requestedByUid)
+        && data.requestedByName is string && data.requestedByName.size() >= 1 && data.requestedByName.size() <= 60
+        && data.createdAt is timestamp;
+    }
+
+    // Health check document for testConnection()
+    match /test/{docId} {
+      allow get: if isSignedIn() && docId == 'connection';
+    }
+
+    // Admin registry (server/console managed)
+    match /admins/{adminId} {
+      allow get: if isOwner(adminId) || isAdmin();
+    }
+
+    // User public profile + isolated private PII subcollection
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarColor', 'updatedAt']))
+        );
+      allow delete: if isAdmin() && isValidId(userId);
+
+      match /private/{docId} {
+        allow get: if isValidId(userId) && docId == 'info' && (isOwner(userId) || isAdmin());
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && docId == 'info'
+          && isOwner(userId)
+          && isValidUserPrivateInfo(incoming())
+          && incoming().uid == request.auth.uid
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedUser()
+          && isValidId(userId)
+          && docId == 'info'
+          && isValidUserPrivateInfo(incoming())
+          && incoming().uid == existing().uid
+          && incoming().updatedAt == request.time
+          && (
+            isAdmin() ||
+            (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt']))
+          );
+        allow delete: if isAdmin() && isValidId(userId) && docId == 'info';
+      }
+    }
+
+    // Curated Karaoke Song Catalog
+    match /songs/{songId} {
+      allow get: if isSignedIn() && isValidId(songId) && (existing().isPublic == true || existing().addedByUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && existing().isPublic == true;
+      allow create: if isVerifiedUser()
+        && isValidId(songId)
+        && isValidSong(incoming())
+        && incoming().addedByUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(songId)
+        && isValidSong(incoming())
+        && incoming().addedByUid == existing().addedByUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (existing().addedByUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'artist', 'language', 'category', 'durationSec', 'isPublic', 'updatedAt']))
+        );
+      allow delete: if isVerifiedUser() && isValidId(songId) && (isAdmin() || existing().addedByUid == request.auth.uid);
+    }
+
+    // Karaoke Jam Rooms
+    match /rooms/{roomCode} {
+      allow get: if isSignedIn() && isValidId(roomCode) && (existing().isOpen == true || existing().hostUid == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().hostUid == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(roomCode)
+        && isValidRoom(incoming())
+        && incoming().code == roomCode
+        && incoming().hostUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(roomCode)
+        && isValidRoom(incoming())
+        && incoming().code == existing().code
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (existing().hostUid == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'hostUid', 'isOpen', 'duetMode', 'autoMuteOnStage', 'updatedAt']))
+        );
+      allow delete: if isVerifiedUser() && isValidId(roomCode) && (isAdmin() || existing().hostUid == request.auth.uid);
+
+      // Saved queue subcollection guarded by Master Gate get() on parent room
+      match /savedQueue/{itemId} {
+        allow get: if isSignedIn()
+          && isValidId(roomCode)
+          && isValidId(itemId)
+          && (
+            isAdmin() ||
+            get(/databases/$(database)/documents/rooms/$(roomCode)).data.isOpen == true ||
+            get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+          );
+        allow list: if isSignedIn()
+          && isValidId(roomCode)
+          && (existing().requestedByUid == request.auth.uid || isAdmin());
+        allow create: if isVerifiedUser()
+          && isValidId(roomCode)
+          && isValidId(itemId)
+          && isValidQueueItem(incoming())
+          && incoming().requestedByUid == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/rooms/$(roomCode))
+          && (
+            get(/databases/$(database)/documents/rooms/$(roomCode)).data.isOpen == true ||
+            get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+          );
+        allow update: if false;
+        allow delete: if isVerifiedUser()
+          && isValidId(roomCode)
+          && isValidId(itemId)
+          && (
+            isAdmin() ||
+            existing().requestedByUid == request.auth.uid ||
+            get(/databases/$(database)/documents/rooms/$(roomCode)).data.hostUid == request.auth.uid
+          );
+      }
+    }
+  }
+}
